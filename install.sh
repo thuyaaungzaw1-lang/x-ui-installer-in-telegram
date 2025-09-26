@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# X-UI ALL IN ONE INSTALLER + UNINSTALLER + TELEGRAM BOT CONTROL
-# By ThuYaAungZaw - Fixed Installation Version
+# X-UI ALL IN ONE + TELEGRAM BOT CONTROL
+# By ThuYaAungZaw - With Full Bot Features
 
 red='\033[0;31m'
 green='\033[0;32m'
@@ -11,7 +11,7 @@ cyan='\033[0;36m'
 magenta='\033[0;35m'
 plain='\033[0m'
 
-# Display THUYA banner
+# Display banner
 echo -e "${cyan}"
 cat << "EOF"
  ████████╗██╗  ██╗██╗   ██╗██╗   ██╗ █████╗ 
@@ -22,7 +22,7 @@ cat << "EOF"
     ╚═╝   ╚═╝  ╚═╝ ╚═════╝    ╚═╝   ╚═╝  ╚═╝
 EOF
 echo -e "${plain}"
-echo -e "${blue}X-UI ALL IN ONE (INSTALLER + UNINSTALLER + BOT CONTROL)${plain}"
+echo -e "${blue}X-UI + Telegram Bot Control${plain}"
 echo -e "${green}By ThuYaAungZaw${plain}"
 echo -e "${yellow}=========================================${plain}"
 
@@ -40,15 +40,14 @@ TELEGRAM_BOT_TOKEN=""
 TELEGRAM_CHAT_ID=""
 TELEGRAM_ENABLED=false
 SERVER_IP=""
-INSTALL_SUCCESS=false
 
-# Get server IP function
+# Get server IP
 get_server_ip() {
     SERVER_IP=$(curl -s4 ifconfig.me 2>/dev/null || curl -s ifconfig.me 2>/dev/null || hostname -I | awk '{print $1}')
     echo -e "${blue}Server IP: $SERVER_IP${plain}"
 }
 
-# Safe telegram message function
+# Telegram message function
 safe_send_telegram_message() {
     local message="$1"
     if [ "$TELEGRAM_ENABLED" = true ] && [ -n "$TELEGRAM_BOT_TOKEN" ] && [ -n "$TELEGRAM_CHAT_ID" ]; then
@@ -59,307 +58,23 @@ safe_send_telegram_message() {
     fi
 }
 
-# Check existing X-UI installation
+# Check existing installation
 check_existing_installation() {
-    if systemctl is-active x-ui >/dev/null 2>&1 || [ -f "/usr/local/x-ui/x-ui" ] || [ -f "/etc/systemd/system/x-ui.service" ]; then
+    if systemctl is-active x-ui >/dev/null 2>&1 || [ -f "/usr/local/x-ui/x-ui" ]; then
         return 0
     else
         return 1
     fi
 }
 
-# Fix installation issues
-fix_installation_issues() {
-    echo -e "${yellow}Applying pre-installation fixes...${plain}"
-    
-    # Clean up any existing installations
-    systemctl stop x-ui 2>/dev/null
-    systemctl stop x-ui-bot 2>/dev/null
-    pkill -f x-ui 2>/dev/null
-    pkill -f xray 2>/dev/null
-    pkill -f "bot_control.sh" 2>/dev/null
-    pkill -f "monitor.sh" 2>/dev/null
-    
-    # Remove conflicting files
-    rm -rf /usr/local/x-ui/ 2>/dev/null
-    rm -rf /etc/x-ui/ 2>/dev/null
-    rm -f /etc/systemd/system/x-ui.service 2>/dev/null
-    rm -f /usr/local/bin/x-ui 2>/dev/null
-    
-    # Clean up port conflicts
-    echo -e "${yellow}Checking port $CUSTOM_PORT...${plain}"
-    if lsof -i :$CUSTOM_PORT >/dev/null 2>&1; then
-        echo -e "${red}Port $CUSTOM_PORT is in use! Killing process...${plain}"
-        fuser -k $CUSTOM_PORT/tcp 2>/dev/null
-        sleep 2
-    fi
-    
-    # Update system packages
-    echo -e "${yellow}Updating system packages...${plain}"
-    if command -v apt >/dev/null; then
-        apt update -y >/dev/null 2>&1
-        apt install -y wget curl net-tools lsof sqlite3 jq >/dev/null 2>&1
-    elif command -v yum >/dev/null; then
-        yum update -y >/dev/null 2>&1
-        yum install -y wget curl net-tools lsof sqlite3 jq >/dev/null 2>&1
-    fi
-    
-    echo -e "${green}✓ Pre-installation fixes applied${plain}"
-}
-
-# Get custom credentials
-get_custom_credentials() {
-    echo -e "${green}=== Custom Configuration ===${plain}"
-    
-    read -p "Enter username [default: admin]: " user_input
-    [ -n "$user_input" ] && CUSTOM_USERNAME="$user_input"
-    
-    read -p "Enter password [default: admin]: " pass_input
-    [ -n "$pass_input" ] && CUSTOM_PASSWORD="$pass_input"
-    
-    read -p "Enter port [default: 54321]: " port_input
-    [ -n "$port_input" ] && CUSTOM_PORT="$port_input"
-    
-    echo -e "${blue}Custom Settings:${plain}"
-    echo -e "Username: ${cyan}$CUSTOM_USERNAME${plain}"
-    echo -e "Password: ${cyan}$CUSTOM_PASSWORD${plain}"
-    echo -e "Port: ${cyan}$CUSTOM_PORT${plain}"
-    
-    read -p "Continue with these settings? (y/n): " confirm
-    if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
-        get_custom_credentials
-    fi
-}
-
-# Install X-UI function
-install_xui() {
-    echo -e "${green}=== Starting X-UI Installation ===${plain}"
-    
-    # Get credentials first
-    get_custom_credentials
-    
-    # Apply fixes
-    fix_installation_issues
-    
-    # Detect architecture
-    arch=$(uname -m)
-    if [[ $arch == "x86_64" ]]; then
-        arch="amd64"
-    elif [[ $arch == "aarch64" ]]; then
-        arch="arm64" 
-    else
-        arch="amd64"
-        echo -e "${yellow}Unknown architecture, using amd64${plain}"
-    fi
-    
-    echo -e "${blue}Architecture: $arch${plain}"
-    
-    # Get latest version
-    echo -e "${yellow}Fetching latest version...${plain}"
-    latest_version=$(curl -s https://api.github.com/repos/yonggekkk/x-ui-yg/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
-    
-    if [ -z "$latest_version" ]; then
-        latest_version="v1.0.0"
-        echo -e "${yellow}Using default version: $latest_version${plain}"
-    else
-        echo -e "${green}Latest version: $latest_version${plain}"
-    fi
-    
-    # Download x-ui
-    echo -e "${yellow}Downloading x-ui...${plain}"
-    cd /usr/local/
-    
-    download_url="https://github.com/yonggekkk/x-ui-yg/releases/download/$latest_version/x-ui-linux-$arch.tar.gz"
-    
-    if ! wget --timeout=30 -O x-ui-linux-$arch.tar.gz "$download_url"; then
-        echo -e "${red}Download failed! Trying alternative URL...${plain}"
-        download_url="https://github.com/yonggekkk/x-ui-yg/releases/latest/download/x-ui-linux-$arch.tar.gz"
-        if ! wget --timeout=30 -O x-ui-linux-$arch.tar.gz "$download_url"; then
-            echo -e "${red}All download attempts failed!${plain}"
-            echo -e "${yellow}Please check your internet connection and try again.${plain}"
-            return 1
-        fi
-    fi
-    
-    # Extract
-    echo -e "${yellow}Installing...${plain}"
-    if ! tar zxvf x-ui-linux-$arch.tar.gz; then
-        echo -e "${red}Extraction failed!${plain}"
-        return 1
-    fi
-    
-    rm -f x-ui-linux-$arch.tar.gz
-    
-    if [ ! -d "x-ui" ]; then
-        echo -e "${red}Installation directory not found!${plain}"
-        return 1
-    fi
-    
-    # Set permissions
-    cd x-ui
-    chmod +x x-ui
-    if [ -d "bin" ]; then
-        chmod +x bin/xray-linux-$arch 2>/dev/null
-    fi
-    
-    # Create config directory
-    mkdir -p /etc/x-ui/
-    if [ ! -f /etc/x-ui/x-ui.db ]; then
-        cp x-ui.db /etc/x-ui/ 2>/dev/null || echo -e "${yellow}Using default database${plain}"
-    fi
-    
-    # Create service file
-    cat > /etc/systemd/system/x-ui.service << EOF
-[Unit]
-Description=x-ui Service
-After=network.target
-
-[Service]
-Type=simple
-WorkingDirectory=/usr/local/x-ui
-ExecStart=/usr/local/x-ui/x-ui
-Restart=on-failure
-RestartSec=5s
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-    # Reload and start service
-    systemctl daemon-reload
-    systemctl enable x-ui
-    
-    # Start service initially
-    echo -e "${yellow}Starting x-ui service...${plain}"
-    systemctl start x-ui
-    
-    # Wait for service to start
-    echo -e "${yellow}Waiting for service to start...${plain}"
-    sleep 10
-    
-    # Stop service to apply custom settings
-    systemctl stop x-ui
-    sleep 3
-    
-    # Apply custom credentials
-    echo -e "${yellow}Applying custom credentials...${plain}"
-    cd /usr/local/x-ui
-    
-    if [ -f "x-ui" ]; then
-        ./x-ui setting -username "$CUSTOM_USERNAME" -password "$CUSTOM_PASSWORD"
-        ./x-ui setting -port "$CUSTOM_PORT"
-    else
-        echo -e "${red}x-ui binary not found!${plain}"
-        return 1
-    fi
-    
-    # Restart with new settings
-    echo -e "${yellow}Restarting with new settings...${plain}"
-    systemctl start x-ui
-    sleep 5
-    
-    # Check if service is running
-    if systemctl is-active x-ui >/dev/null; then
-        echo -e "${green}✓ X-UI service is running${plain}"
-    else
-        echo -e "${red}✗ X-UI service failed to start${plain}"
-        echo -e "${yellow}Attempting manual start...${plain}"
-        cd /usr/local/x-ui
-        nohup ./x-ui > /var/log/x-ui.log 2>&1 &
-        sleep 3
-    fi
-    
-    # Configure firewall for custom port
-    echo -e "${yellow}Configuring firewall for port $CUSTOM_PORT...${plain}"
-    if command -v ufw >/dev/null && ufw status | grep -q "active"; then
-        ufw allow $CUSTOM_PORT/tcp >/dev/null 2>&1
-        ufw allow 10000:50000/udp >/dev/null 2>&1
-        ufw allow 10000:50000/tcp >/dev/null 2>&1
-        echo -e "${green}✓ UFW configured${plain}"
-    fi
-    
-    # Add iptables rules
-    iptables -A INPUT -p tcp --dport $CUSTOM_PORT -j ACCEPT 2>/dev/null
-    iptables -A INPUT -p udp --dport 10000:50000 -j ACCEPT 2>/dev/null
-    iptables -A INPUT -p tcp --dport 10000:50000 -j ACCEPT 2>/dev/null
-    
-    # Test the installation
-    echo -e "${yellow}Testing installation...${plain}"
-    
-    # Test panel access with custom port
-    if curl -s --connect-timeout 10 http://127.0.0.1:$CUSTOM_PORT >/dev/null 2>&1; then
-        panel_status="${green}✓ Accessible${plain}"
-        INSTALL_SUCCESS=true
-    else
-        panel_status="${red}✗ Not accessible${plain}"
-        INSTALL_SUCCESS=false
-    fi
-    
-    # Test xray process
-    if pgrep xray >/dev/null; then
-        xray_status="${green}✓ Running${plain}"
-    else
-        xray_status="${red}✗ Not running${plain}"
-    fi
-    
-    # Display results
-    echo -e "${green}=== Installation Complete! ===${plain}"
-    echo -e "${cyan}Panel URL: http://$SERVER_IP:$CUSTOM_PORT${plain}"
-    echo -e "${cyan}Username: $CUSTOM_USERNAME${plain}"
-    echo -e "${cyan}Password: $CUSTOM_PASSWORD${plain}"
-    echo -e ""
-    echo -e "${blue}Status Check:${plain}"
-    echo -e "Panel: $panel_status"
-    echo -e "Xray: $xray_status"
-    
-    if [ "$INSTALL_SUCCESS" = true ]; then
-        echo -e "${green}✅ X-UI installed successfully!${plain}"
-    else
-        echo -e "${red}❌ X-UI installation may have issues${plain}"
-    fi
-    
-    # Send Telegram notification
-    if [ "$TELEGRAM_ENABLED" = true ] && [ "$INSTALL_SUCCESS" = true ]; then
-        safe_send_telegram_message "🎉 X-UI Installation Complete!
-
-🖥️ Server: $SERVER_IP
-🔗 Panel: http://$SERVER_IP:$CUSTOM_PORT
-👤 Username: $CUSTOM_USERNAME
-🔐 Password: $CUSTOM_PASSWORD
-
-Status:
-Panel: ✅ Accessible
-Xray: ✅ Running
-
-⚠️ Keep credentials safe!"
-    elif [ "$TELEGRAM_ENABLED" = true ] && [ "$INSTALL_SUCCESS" = false ]; then
-        safe_send_telegram_message "⚠️ X-UI Installation Issues
-
-🖥️ Server: $SERVER_IP
-🔗 Panel: http://$SERVER_IP:$CUSTOM_PORT
-
-Status:
-Panel: ❌ Not Accessible
-Xray: $([ "$xray_status" = "${green}✓ Running${plain}" ] && echo "✅ Running" || echo "❌ Not Running")
-
-Please check the installation manually."
-    fi
-    
-    return 0
-}
-
 # Setup telegram bot
 setup_telegram_bot() {
-    echo -e "${yellow}Do you want Telegram notifications and bot control? (y/n): ${plain}"
+    echo -e "${yellow}Do you want Telegram bot control? (y/n): ${plain}"
     read -p "" setup_bot
     
     if [ "$setup_bot" = "y" ] || [ "$setup_bot" = "Y" ]; then
         echo -e "${green}=== Telegram Bot Setup ===${plain}"
-        echo -e "1. Create bot with @BotFather"
-        echo -e "2. Get bot token (format: 123456789:ABCdefGhIjKlmNoPQRsTUVwxyZ)"
-        echo -e "3. Send message to your bot" 
-        echo -e "4. Visit: https://api.telegram.org/bot<TOKEN>/getUpdates"
-        echo -e "5. Find and copy chat ID (numeric value)"
+        echo -e "Bot Token Example: 123456789:ABCdefGhIjKlmNoPQRsTUVwxyZ"
         echo -e ""
         
         read -p "Enter Bot Token: " bot_token
@@ -369,22 +84,16 @@ setup_telegram_bot() {
             TELEGRAM_BOT_TOKEN="$bot_token"
             TELEGRAM_CHAT_ID="$chat_id"
             
-            # Validate token format
             if [[ "$bot_token" =~ ^[0-9]+:[a-zA-Z0-9_-]+$ ]]; then
-                # Test bot connection
-                echo -e "${yellow}Testing bot connection...${plain}"
                 if timeout 15 curl -s "https://api.telegram.org/bot$bot_token/getMe" | grep -q "ok"; then
                     TELEGRAM_ENABLED=true
                     echo -e "${green}✓ Bot connected successfully${plain}"
-                    safe_send_telegram_message "🔔 X-UI Installer Started\n🖥️ Server IP: $SERVER_IP\n⏰ Time: $(date)"
                 else
                     echo -e "${red}✗ Bot connection failed${plain}"
-                    echo -e "${yellow}Continuing without Telegram...${plain}"
                     TELEGRAM_ENABLED=false
                 fi
             else
                 echo -e "${red}✗ Invalid bot token format${plain}"
-                echo -e "${yellow}Continuing without Telegram...${plain}"
                 TELEGRAM_ENABLED=false
             fi
         else
@@ -396,186 +105,432 @@ setup_telegram_bot() {
     fi
 }
 
-# UNINSTALLER FUNCTION
-uninstall_xui() {
-    echo -e "${red}=== X-UI UNINSTALLER ===${plain}"
+# Install X-UI (simplified version)
+install_xui() {
+    echo -e "${green}=== Installing X-UI ===${plain}"
     
-    if ! check_existing_installation; then
-        echo -e "${yellow}No X-UI installation found!${plain}"
-        return 1
+    # Basic installation
+    bash <(curl -Ls https://raw.githubusercontent.com/vaxilu/x-ui/master/install.sh)
+    
+    # Apply custom settings if x-ui exists
+    if [ -f "/usr/local/x-ui/x-ui" ]; then
+        cd /usr/local/x-ui
+        ./x-ui setting -username "$CUSTOM_USERNAME" -password "$CUSTOM_PASSWORD"
+        ./x-ui setting -port "$CUSTOM_PORT"
+        systemctl restart x-ui
     fi
     
-    echo -e "${yellow}This will completely remove X-UI and all related data!${plain}"
-    read -p "Are you sure you want to uninstall? (y/n): " confirm
-    
-    if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
-        echo -e "${green}Uninstall cancelled.${plain}"
-        return 0
-    fi
-    
-    echo -e "${yellow}Starting uninstallation...${plain}"
-    
-    # Stop services
-    echo -e "${yellow}Stopping services...${plain}"
-    systemctl stop x-ui 2>/dev/null
-    systemctl stop x-ui-bot 2>/dev/null
-    pkill -f x-ui 2>/dev/null
-    pkill -f xray 2>/dev/null
-    
-    # Disable services
-    systemctl disable x-ui 2>/dev/null
-    systemctl disable x-ui-bot 2>/dev/null
-    
-    # Remove systemd services
-    echo -e "${yellow}Removing services...${plain}"
-    rm -f /etc/systemd/system/x-ui.service 2>/dev/null
-    rm -f /etc/systemd/system/x-ui-bot.service 2>/dev/null
-    systemctl daemon-reload
-    
-    # Remove installed files
-    echo -e "${yellow}Removing files...${plain}"
-    rm -rf /usr/local/x-ui/ 2>/dev/null
-    rm -rf /etc/x-ui/ 2>/dev/null
-    rm -f /usr/local/bin/x-ui 2>/dev/null
-    
-    # Clean up processes
-    pkill -f "bot_control.sh" 2>/dev/null
-    pkill -f "monitor.sh" 2>/dev/null
-    
-    echo -e "${green}✓ X-UI uninstalled successfully!${plain}"
-    
-    # Send Telegram notification
+    echo -e "${green}✓ X-UI installed${plain}"
+}
+
+# TELEGRAM BOT CONTROL SYSTEM
+setup_telegram_bot_control() {
     if [ "$TELEGRAM_ENABLED" = true ]; then
-        safe_send_telegram_message "🗑️ X-UI Completely Uninstalled
+        echo -e "${green}=== Setting Up Telegram Bot Control ===${plain}"
         
-✅ All services stopped
-✅ Files removed
-✅ System cleaned
+        # Create the main bot control script
+        cat > /usr/local/x-ui/telegram_bot.py << 'EOF'
+#!/usr/bin/env python3
+import sqlite3
+import subprocess
+import requests
+import time
+import os
+import logging
+from datetime import datetime
 
-Server: $SERVER_IP
-Time: $(date)"
-    fi
-    
-    return 0
-}
+# Configuration
+BOT_TOKEN = "TOKEN_PLACEHOLDER"
+CHAT_ID = "CHATID_PLACEHOLDER"
+DB_PATH = "/etc/x-ui/x-ui.db"
+XUI_PATH = "/usr/local/x-ui/x-ui"
+LOG_FILE = "/var/log/x-ui-bot.log"
 
-# Show installation status
-show_status() {
-    echo -e "${green}=== X-UI STATUS ===${plain}"
-    
-    if check_existing_installation; then
-        echo -e "X-UI Status: ${green}Installed${plain}"
+# Setup logging
+logging.basicConfig(
+    filename=LOG_FILE,
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+
+def send_telegram_message(message):
+    """Send message to Telegram"""
+    try:
+        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+        payload = {
+            'chat_id': CHAT_ID,
+            'text': message,
+            'parse_mode': 'Markdown'
+        }
+        response = requests.post(url, data=payload, timeout=10)
+        return response.status_code == 200
+    except Exception as e:
+        logging.error(f"Failed to send message: {e}")
+        return False
+
+def get_user_stats():
+    """Get all user statistics from database"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
         
-        # Check services
-        if systemctl is-active x-ui >/dev/null 2>&1; then
-            echo -e "Service: ${green}Running${plain}"
-        else
-            echo -e "Service: ${red}Stopped${plain}"
+        # Get user list with traffic
+        cursor.execute("""
+            SELECT username, traffic_up, traffic_down, expiry_time 
+            FROM client_traffic 
+            ORDER BY username
+        """)
+        
+        users = cursor.fetchall()
+        conn.close()
+        
+        if not users:
+            return "No users found in database."
+        
+        result = "👥 *User Statistics:*\n\n"
+        for user in users:
+            username, up, down, expiry = user
+            total = up + down
+            up_gb = round(up / (1024**3), 2)
+            down_gb = round(down / (1024**3), 2)
+            total_gb = round(total / (1024**3), 2)
+            
+            # Format expiry date
+            if expiry > 0:
+                expiry_date = datetime.fromtimestamp(expiry).strftime('%Y-%m-%d')
+            else:
+                expiry_date = "Never"
+            
+            result += f"🔹 *{username}*\n"
+            result += f"   📤 Upload: {up_gb} GB\n"
+            result += f"   📥 Download: {down_gb} GB\n"
+            result += f"   📊 Total: {total_gb} GB\n"
+            result += f"   ⏰ Expiry: {expiry_date}\n\n"
+        
+        return result
+        
+    except Exception as e:
+        logging.error(f"Database error: {e}")
+        return f"❌ Database error: {e}"
+
+def get_server_status():
+    """Get server status information"""
+    try:
+        # CPU usage
+        cpu_cmd = "top -bn1 | grep 'Cpu(s)' | awk '{print $2}' | cut -d'%' -f1"
+        cpu_usage = subprocess.getoutput(cpu_cmd)
+        
+        # Memory usage
+        mem_cmd = "free -m | awk 'NR==2{printf \"%.1f\", $3*100/$2}'"
+        mem_usage = subprocess.getoutput(mem_cmd)
+        
+        # Disk usage
+        disk_cmd = "df -h / | awk 'NR==2{print $5}'"
+        disk_usage = subprocess.getoutput(disk_cmd)
+        
+        # Uptime
+        uptime_cmd = "uptime -p"
+        uptime = subprocess.getoutput(uptime_cmd)
+        
+        # X-UI status
+        xui_status = "Active" if subprocess.call(["systemctl", "is-active", "x-ui"]) == 0 else "Inactive"
+        
+        # Active connections
+        conn_cmd = "netstat -an | grep :443 | grep ESTABLISHED | wc -l"
+        connections = subprocess.getoutput(conn_cmd)
+        
+        status_msg = f"""🖥️ *Server Status:*
+
+• 💻 CPU Usage: {cpu_usage}%
+• 🧠 Memory Usage: {mem_usage}%
+• 💿 Disk Usage: {disk_usage}
+• ⏰ Uptime: {uptime}
+• 🔌 X-UI Status: {xui_status}
+• 🌐 Active Connections: {connections}"""
+
+        return status_msg
+        
+    except Exception as e:
+        logging.error(f"Status error: {e}")
+        return f"❌ Status error: {e}"
+
+def get_realtime_traffic():
+    """Get real-time traffic information"""
+    try:
+        # Network traffic
+        traffic_cmd = "ifconfig | grep 'RX packets' | head -1 | awk '{print $5}'"
+        rx_bytes = subprocess.getoutput(traffic_cmd)
+        traffic_cmd = "ifconfig | grep 'TX packets' | head -1 | awk '{print $5}'"
+        tx_bytes = subprocess.getoutput(traffic_cmd)
+        
+        # Convert to MB
+        rx_mb = round(int(rx_bytes) / (1024**2), 2) if rx_bytes.isdigit() else 0
+        tx_mb = round(int(tx_bytes) / (1024**2), 2) if tx_bytes.isdigit() else 0
+        
+        traffic_msg = f"""📊 *Real-time Traffic:*
+
+• 📥 Received: {rx_mb} MB
+• 📤 Sent: {tx_mb} MB
+• 📊 Total: {rx_mb + tx_mb} MB"""
+
+        return traffic_msg
+        
+    except Exception as e:
+        logging.error(f"Traffic error: {e}")
+        return f"❌ Traffic error: {e}"
+
+def restart_services():
+    """Restart X-UI services"""
+    try:
+        subprocess.run(["systemctl", "restart", "x-ui"], check=True)
+        time.sleep(3)
+        status = "Active" if subprocess.call(["systemctl", "is-active", "x-ui"]) == 0 else "Inactive"
+        return f"✅ Services restarted\nX-UI Status: {status}"
+    except Exception as e:
+        logging.error(f"Restart error: {e}")
+        return f"❌ Restart failed: {e}"
+
+def handle_command(command, args=""):
+    """Handle Telegram bot commands"""
+    command = command.lower()
+    
+    if command == "/start":
+        return """🤖 *X-UI Bot Control Panel*
+
+Available commands:
+👥 /users - Show all users and traffic
+📊 /stats - User statistics  
+🖥️ /status - Server status
+🌐 /traffic - Real-time traffic
+🔄 /restart - Restart services
+📈 /usage username - Check specific user
+
+*Quick Stats:*
+Use /users to see all user data"""
+
+    elif command == "/users":
+        return get_user_stats()
+        
+    elif command == "/stats":
+        return get_user_stats()
+        
+    elif command == "/status":
+        return get_server_status()
+        
+    elif command == "/traffic":
+        return get_realtime_traffic()
+        
+    elif command == "/restart":
+        return restart_services()
+        
+    elif command == "/usage":
+        if args:
+            return f"Usage check for: {args}\nUse /users to see all user data."
+        else:
+            return "❌ Usage: /usage username"
+    
+    else:
+        return "❌ Unknown command. Use /start for help."
+
+# Polling function (simple version)
+def start_bot_polling():
+    """Start simple polling for bot commands"""
+    last_update_id = 0
+    
+    while True:
+        try:
+            # Get updates from Telegram
+            url = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates"
+            params = {'offset': last_update_id + 1, 'timeout': 30}
+            response = requests.get(url, params=params, timeout=35)
+            
+            if response.status_code == 200:
+                data = response.json()
+                if data['ok'] and data['result']:
+                    for update in data['result']:
+                        last_update_id = update['update_id']
+                        
+                        if 'message' in update and 'text' in update['message']:
+                            message = update['message']['text']
+                            chat_id = update['message']['chat']['id']
+                            
+                            # Only respond to authorized chat
+                            if str(chat_id) == CHAT_ID:
+                                # Parse command and arguments
+                                parts = message.split(' ', 1)
+                                command = parts[0]
+                                args = parts[1] if len(parts) > 1 else ""
+                                
+                                # Handle command
+                                result = handle_command(command, args)
+                                send_telegram_message(result)
+            
+            time.sleep(1)
+            
+        except Exception as e:
+            logging.error(f"Polling error: {e}")
+            time.sleep(5)
+
+if __name__ == "__main__":
+    # Check if required files exist
+    if not os.path.exists(DB_PATH):
+        logging.error("X-UI database not found!")
+        exit(1)
+    
+    # Start the bot
+    logging.info("Starting Telegram bot...")
+    send_telegram_message("🤖 X-UI Bot Control Started!")
+    start_bot_polling()
+EOF
+
+        # Replace placeholders with actual values
+        sed -i "s/TOKEN_PLACEHOLDER/$TELEGRAM_BOT_TOKEN/g" /usr/local/x-ui/telegram_bot.py
+        sed -i "s/CHATID_PLACEHOLDER/$TELEGRAM_CHAT_ID/g" /usr/local/x-ui/telegram_bot.py
+        
+        # Make executable
+        chmod +x /usr/local/x-ui/telegram_bot.py
+        
+        # Install Python requirements
+        echo -e "${yellow}Installing Python dependencies...${plain}"
+        if command -v apt >/dev/null; then
+            apt install -y python3 python3-pip >/dev/null 2>&1
+        elif command -v yum >/dev/null; then
+            yum install -y python3 python3-pip >/dev/null 2>&1
         fi
         
-        if pgrep xray >/dev/null; then
-            echo -e "Xray: ${green}Running${plain}"
-        else
-            echo -e "Xray: ${red}Stopped${plain}"
-        fi
+        pip3 install requests >/dev/null 2>&1
         
-        # Check panel access
-        if curl -s --connect-timeout 5 http://127.0.0.1:$CUSTOM_PORT >/dev/null 2>&1; then
-            echo -e "Panel: ${green}Accessible${plain}"
-        else
-            echo -e "Panel: ${red}Not Accessible${plain}"
-        fi
+        # Create systemd service for bot
+        cat > /etc/systemd/system/x-ui-bot.service << EOF
+[Unit]
+Description=X-UI Telegram Bot
+After=network.target x-ui.service
+Wants=x-ui.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/local/x-ui/telegram_bot.py
+Restart=always
+RestartSec=10
+User=root
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+        systemctl daemon-reload
+        systemctl enable x-ui-bot
+        systemctl start x-ui-bot
         
-    else
-        echo -e "X-UI Status: ${red}Not Installed${plain}"
+        echo -e "${green}✓ Telegram bot control system installed${plain}"
+        
+        # Send test message
+        safe_send_telegram_message "🤖 *X-UI Bot Control Activated!*
+
+✅ Bot system is now running
+✅ User data monitoring enabled
+✅ Server status monitoring active
+
+*Available Commands:*
+👥 /users - Show all users and traffic
+📊 /stats - Detailed statistics
+🖥️ /status - Server status
+🌐 /traffic - Real-time data
+🔄 /restart - Restart services
+
+Try: /users to see your user data"
     fi
 }
 
-# Main menu function
-show_main_menu() {
-    echo -e "${cyan}"
-    echo "========================================="
-    echo "          X-UI MANAGEMENT MENU"
-    echo "========================================="
-    echo -e "${plain}"
-    
-    if check_existing_installation; then
-        echo -e "${green}✅ X-UI is installed${plain}"
-        show_status
-        echo -e ""
-        echo -e "${yellow}Available actions:${plain}"
-        echo -e "1. ${blue}Reinstall/Update X-UI${plain}"
-        echo -e "2. ${red}Uninstall X-UI${plain}"
-        echo -e "3. ${green}Show Status${plain}"
-        echo -e "4. ${magenta}Exit${plain}"
-    else
-        echo -e "${red}❌ X-UI is not installed${plain}"
-        echo -e ""
-        echo -e "${yellow}Available actions:${plain}"
-        echo -e "1. ${green}Install X-UI${plain}"
-        echo -e "2. ${cyan}Exit${plain}"
-    fi
-    
-    echo -e ""
+# Simple bash version bot (fallback)
+setup_simple_bot() {
+    if [ "$TELEGRAM_ENABLED" = true ]; then
+        echo -e "${green}=== Setting Up Simple Bot Control ===${plain}"
+        
+        cat > /usr/local/x-ui/simple_bot.sh << 'EOF'
+#!/bin/bash
+
+BOT_TOKEN="TOKEN_PLACEHOLDER"
+CHAT_ID="CHATID_PLACEHOLDER"
+
+send_message() {
+    curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
+        -d chat_id="$CHAT_ID" \
+        -d text="$1" \
+        -d parse_mode="Markdown"
 }
 
-# Main execution flow
+# Simple command handler - you can extend this
+case "$1" in
+    "users")
+        if [ -f "/etc/x-ui/x-ui.db" ]; then
+            users=$(sqlite3 /etc/x-ui/x-ui.db "SELECT username FROM client_traffic;" 2>/dev/null | tr '\n' ' ')
+            send_message "👥 Users: $users"
+        fi
+        ;;
+    "status")
+        status=$(systemctl is-active x-ui)
+        send_message "🖥️ X-UI Status: $status"
+        ;;
+esac
+EOF
+
+        sed -i "s/TOKEN_PLACEHOLDER/$TELEGRAM_BOT_TOKEN/g" /usr/local/x-ui/simple_bot.sh
+        sed -i "s/CHATID_PLACEHOLDER/$TELEGRAM_CHAT_ID/g" /usr/local/x-ui/simple_bot.sh
+        chmod +x /usr/local/x-ui/simple_bot.sh
+        
+        echo -e "${green}✓ Simple bot control installed${plain}"
+    fi
+}
+
+# Main installation flow
 main() {
     get_server_ip
     
-    while true; do
-        show_main_menu
-        
-        read -p "Select option (number): " menu_choice
-        
-        case $menu_choice in
-            1)
-                if check_existing_installation; then
-                    echo -e "${yellow}X-UI is already installed. Do you want to reinstall?${plain}"
-                    read -p "This will remove the current installation. Continue? (y/n): " reinstall_confirm
-                    if [ "$reinstall_confirm" = "y" ] || [ "$reinstall_confirm" = "Y" ]; then
-                        uninstall_xui
-                        sleep 2
-                    else
-                        echo -e "${green}Reinstall cancelled.${plain}"
-                        continue
-                    fi
-                fi
-                
-                setup_telegram_bot
-                install_xui
-                
-                if [ "$INSTALL_SUCCESS" = true ]; then
-                    echo -e "${green}✅ Installation completed successfully!${plain}"
-                else
-                    echo -e "${red}❌ Installation may have issues. Please check manually.${plain}"
-                fi
-                ;;
-            2)
-                if check_existing_installation; then
-                    uninstall_xui
-                else
-                    echo -e "${green}Goodbye!${plain}"
-                    exit 0
-                fi
-                ;;
-            3)
-                show_status
-                ;;
-            4|"")
-                echo -e "${green}Goodbye!${plain}"
-                exit 0
-                ;;
-            *)
-                echo -e "${red}Invalid option! Please try again.${plain}"
-                ;;
-        esac
-        
+    if check_existing_installation; then
+        echo -e "${green}✅ X-UI is already installed${plain}"
+        echo -e "${yellow}Setting up Telegram bot control...${plain}"
+    else
+        echo -e "${red}❌ X-UI is not installed${plain}"
+        echo -e "${yellow}Installing X-UI first...${plain}"
+        install_xui
+    fi
+    
+    setup_telegram_bot
+    
+    if [ "$TELEGRAM_ENABLED" = true ]; then
+        # Try Python bot first, fallback to simple bot
+        if command -v python3 >/dev/null; then
+            setup_telegram_bot_control
+        else
+            setup_simple_bot
+        fi
+    fi
+    
+    # Final output
+    echo -e "${cyan}"
+    echo "========================================="
+    echo "         SETUP COMPLETE"
+    echo "========================================="
+    echo -e "${plain}"
+    echo -e "${green}Panel URL: http://$SERVER_IP:$CUSTOM_PORT${plain}"
+    echo -e "${green}Username: $CUSTOM_USERNAME${plain}"
+    echo -e "${green}Password: $CUSTOM_PASSWORD${plain}"
+    echo -e "${blue}Telegram Bot: $([ "$TELEGRAM_ENABLED" = true ] && echo "✅ Enabled" || echo "❌ Disabled")${plain}"
+    
+    if [ "$TELEGRAM_ENABLED" = true ]; then
+        echo -e "${yellow}🤖 Telegram Bot Commands:${plain}"
+        echo -e "${cyan}/start - Show help${plain}"
+        echo -e "${cyan}/users - User list with traffic data${plain}"
+        echo -e "${cyan}/stats - Detailed statistics${plain}"
+        echo -e "${cyan}/status - Server status${plain}"
+        echo -e "${cyan}/traffic - Real-time traffic${plain}"
+        echo -e "${cyan}/restart - Restart services${plain}"
         echo -e ""
-        read -p "Press Enter to continue..."
-        clear
-    done
+        echo -e "${green}📊 Now you can check user data from Telegram!${plain}"
+        echo -e "${yellow}Example: Send '/users' to your bot${plain}"
+    fi
 }
 
-# Start the script
+# Start installation
 main
