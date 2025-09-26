@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# X-UI COMPLETE BOT CONTROL SYSTEM
-# By ThuYaAungZaw - Full Features Version
+# X-UI COMPLETE BOT WITH FIXED DATABASE ACCESS
+# By ThuYaAungZaw - Fixed Database Version
 
 red='\033[0;31m'
 green='\033[0;32m'
@@ -22,7 +22,7 @@ cat << "EOF"
     ╚═╝   ╚═╝  ╚═╝ ╚═════╝    ╚═╝   ╚═╝  ╚═╝
 EOF
 echo -e "${plain}"
-echo -e "${blue}X-UI Complete Bot Control System${plain}"
+echo -e "${blue}X-UI Bot with Fixed Database Access${plain}"
 echo -e "${green}By ThuYaAungZaw${plain}"
 echo -e "${yellow}=========================================${plain}"
 
@@ -33,9 +33,6 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 # Global variables
-CUSTOM_USERNAME="admin"
-CUSTOM_PASSWORD="admin"
-CUSTOM_PORT="54321"
 TELEGRAM_BOT_TOKEN=""
 TELEGRAM_CHAT_ID=""
 TELEGRAM_ENABLED=false
@@ -67,34 +64,31 @@ check_existing_installation() {
     fi
 }
 
-# Install X-UI
-install_xui() {
-    echo -e "${green}=== Installing X-UI ===${plain}"
+# Find correct database path
+find_database_path() {
+    # Common database paths
+    local paths=(
+        "/etc/x-ui/x-ui.db"
+        "/usr/local/x-ui/x-ui.db"
+        "/root/x-ui/x-ui.db"
+        "/home/x-ui/x-ui.db"
+    )
     
-    # Get credentials
-    echo -e "${green}=== Configuration ===${plain}"
-    read -p "Enter username [admin]: " user_input
-    [ -n "$user_input" ] && CUSTOM_USERNAME="$user_input"
-    read -p "Enter password [admin]: " pass_input
-    [ -n "$pass_input" ] && CUSTOM_PASSWORD="$pass_input"
-    read -p "Enter port [54321]: " port_input
-    [ -n "$port_input" ] && CUSTOM_PORT="$port_input"
+    for path in "${paths[@]}"; do
+        if [ -f "$path" ]; then
+            echo "$path"
+            return 0
+        fi
+    done
     
-    # Install
-    bash <(curl -Ls https://raw.githubusercontent.com/vaxilu/x-ui/master/install.sh)
-    
-    # Apply settings
-    if [ -f "/usr/local/x-ui/x-ui" ]; then
-        cd /usr/local/x-ui
-        ./x-ui setting -username "$CUSTOM_USERNAME" -password "$CUSTOM_PASSWORD"
-        ./x-ui setting -port "$CUSTOM_PORT"
-        systemctl restart x-ui
+    # Try to find using find command
+    local found_path=$(find / -name "x-ui.db" 2>/dev/null | head -1)
+    if [ -n "$found_path" ]; then
+        echo "$found_path"
+        return 0
     fi
     
-    echo -e "${green}✓ X-UI installed${plain}"
-    echo -e "${cyan}Panel: http://$SERVER_IP:$CUSTOM_PORT${plain}"
-    echo -e "${cyan}Username: $CUSTOM_USERNAME${plain}"
-    echo -e "${cyan}Password: $CUSTOM_PASSWORD${plain}"
+    return 1
 }
 
 # Setup telegram bot
@@ -127,25 +121,35 @@ setup_telegram_bot() {
     fi
 }
 
-# COMPLETE BOT CONTROL SYSTEM WITH ALL FEATURES
-setup_complete_bot_control() {
+# FIXED BOT CONTROL SYSTEM WITH PROPER DATABASE ACCESS
+setup_fixed_bot_control() {
     if [ "$TELEGRAM_ENABLED" = true ]; then
-        echo -e "${green}=== Setting Up Complete Bot Control ===${plain}"
+        echo -e "${green}=== Setting Up Fixed Bot Control ===${plain}"
+        
+        # Find database path
+        DB_PATH=$(find_database_path)
+        if [ -z "$DB_PATH" ]; then
+            echo -e "${red}❌ X-UI database not found!${plain}"
+            echo -e "${yellow}Please make sure X-UI is properly installed.${plain}"
+            return 1
+        fi
+        
+        echo -e "${green}✓ Database found: $DB_PATH${plain}"
         
         # Install required packages
         echo -e "${yellow}Installing dependencies...${plain}"
         if command -v apt >/dev/null; then
             apt update -y >/dev/null 2>&1
-            apt install -y python3 python3-pip sqlite3 bc jq >/dev/null 2>&1
+            apt install -y python3 python3-pip sqlite3 >/dev/null 2>&1
         elif command -v yum >/dev/null; then
             yum update -y >/dev/null 2>&1
-            yum install -y python3 python3-pip sqlite3 bc jq >/dev/null 2>&1
+            yum install -y python3 python3-pip sqlite3 >/dev/null 2>&1
         fi
         
         pip3 install requests >/dev/null 2>&1
         
-        # Create the complete bot script
-        cat > /usr/local/x-ui/complete_bot.py << 'EOF'
+        # Create the fixed bot script with proper database handling
+        cat > /usr/local/x-ui/fixed_bot.py << 'EOF'
 #!/usr/bin/env python3
 import sqlite3
 import requests
@@ -156,7 +160,7 @@ from datetime import datetime
 
 BOT_TOKEN = "TOKEN_PLACEHOLDER"
 CHAT_ID = "CHATID_PLACEHOLDER"
-DB_PATH = "/etc/x-ui/x-ui.db"
+DB_PATH = "DB_PATH_PLACEHOLDER"
 
 def send_message(text):
     try:
@@ -169,69 +173,126 @@ def send_message(text):
         }
         response = requests.post(url, data=data, timeout=10)
         return response.status_code == 200
-    except:
+    except Exception as e:
+        print(f"Send message error: {e}")
         return False
 
-def get_user_stats_detailed():
-    """Get complete user statistics with expiry dates"""
+def get_database_tables():
+    """Check what tables exist in the database"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        tables = cursor.fetchall()
+        conn.close()
+        return [table[0] for table in tables]
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+def get_user_stats_fixed():
+    """Fixed function to get user statistics"""
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         
-        # Get all user data
-        cursor.execute("""
-            SELECT username, traffic_up, traffic_down, expiry_time, total 
-            FROM client_traffic 
-            ORDER BY username
-        """)
+        # First, check available tables
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        tables = [table[0] for table in cursor.fetchall()]
+        print(f"Available tables: {tables}")
         
-        users = cursor.fetchall()
+        # Try different table names and structures
+        user_data = []
+        
+        # Try common table structures
+        if 'client_traffic' in tables:
+            try:
+                cursor.execute("PRAGMA table_info(client_traffic)")
+                columns = [col[1] for col in cursor.fetchall()]
+                print(f"client_traffic columns: {columns}")
+                
+                if 'expiry_time' in columns:
+                    cursor.execute("SELECT username, up, down, expiry_time, total FROM client_traffic")
+                else:
+                    cursor.execute("SELECT username, up, down, total FROM client_traffic")
+                user_data = cursor.fetchall()
+            except Exception as e:
+                print(f"client_traffic error: {e}")
+        
+        # If no data, try other table names
+        if not user_data and 'inbound' in tables:
+            try:
+                cursor.execute("PRAGMA table_info(inbound)")
+                columns = [col[1] for col in cursor.fetchall()]
+                print(f"inbound columns: {columns}")
+                cursor.execute("SELECT remark, up, down, enable FROM inbound")
+                user_data = cursor.fetchall()
+            except Exception as e:
+                print(f"inbound error: {e}")
+        
+        # If still no data, try to get any user-related data
+        if not user_data:
+            for table in tables:
+                if 'user' in table.lower() or 'client' in table.lower():
+                    try:
+                        cursor.execute(f"SELECT * FROM {table} LIMIT 5")
+                        sample_data = cursor.fetchall()
+                        print(f"Table {table} sample: {sample_data}")
+                    except:
+                        pass
+        
         conn.close()
         
-        if not users:
-            return "❌ No users found in database."
+        if not user_data:
+            return "❌ No user data found in database.\n\nAvailable tables: " + ", ".join(tables)
         
-        result = "👥 *User Statistics - Detailed*\n\n"
+        # Process user data
+        result = "👥 *User Statistics - Fixed Version*\n\n"
         total_upload = 0
         total_download = 0
         active_users = 0
-        expired_users = 0
         
-        for user in users:
-            username, up, down, expiry, total = user
-            up_gb = round(up / (1024**3), 3)
-            down_gb = round(down / (1024**3), 3)
-            total_gb = round((up + down) / (1024**3), 3)
-            
-            total_upload += up_gb
-            total_download += down_gb
-            
-            # Check expiry
-            current_time = int(time.time())
-            if expiry == 0:
-                expiry_status = "♾️ Never"
+        for i, user in enumerate(user_data):
+            if len(user) >= 3:  # At least username, up, down
+                username = str(user[0])
+                up = int(user[1]) if user[1] else 0
+                down = int(user[2]) if user[2] else 0
+                
+                up_gb = round(up / (1024**3), 3)
+                down_gb = round(down / (1024**3), 3)
+                total_gb = up_gb + down_gb
+                
+                total_upload += up_gb
+                total_download += down_gb
                 active_users += 1
-            elif expiry > current_time:
-                expiry_date = datetime.fromtimestamp(expiry).strftime('%Y-%m-%d %H:%M')
-                days_left = (expiry - current_time) // 86400
-                expiry_status = f"✅ {expiry_date} ({days_left}d left)"
-                active_users += 1
-            else:
-                expiry_status = "❌ EXPIRED"
-                expired_users += 1
-            
-            result += f"🔸 *{username}*\n"
-            result += f"   📤 Upload: `{up_gb:.3f} GB`\n"
-            result += f"   📥 Download: `{down_gb:.3f} GB`\n"
-            result += f"   📊 Total: `{total_gb:.3f} GB`\n"
-            result += f"   ⏰ Expiry: {expiry_status}\n"
-            result += "   ───────────────────\n"
+                
+                # Check expiry if available
+                expiry_info = ""
+                if len(user) >= 4 and user[3]:
+                    try:
+                        expiry_time = int(user[3])
+                        if expiry_time > 0:
+                            if expiry_time > time.time():
+                                expiry_date = datetime.fromtimestamp(expiry_time).strftime('%Y-%m-%d')
+                                days_left = (expiry_time - time.time()) // 86400
+                                expiry_info = f"⏰ {expiry_date} ({days_left}d)"
+                            else:
+                                expiry_info = "❌ EXPIRED"
+                        else:
+                            expiry_info = "♾️ Never"
+                    except:
+                        expiry_info = ""
+                
+                result += f"🔸 *{username}*\n"
+                result += f"   📤 Upload: `{up_gb:.3f} GB`\n"
+                result += f"   📥 Download: `{down_gb:.3f} GB`\n"
+                result += f"   📊 Total: `{total_gb:.3f} GB`\n"
+                if expiry_info:
+                    result += f"   {expiry_info}\n"
+                result += "   ───────────────────\n"
         
         # Add summary
         result += f"\n📈 *Summary:*\n"
-        result += f"• 👥 Total Users: {len(users)}\n"
-        result += f"• ✅ Active: {active_users}\n"
-        result += f"• ❌ Expired: {expired_users}\n"
+        result += f"• 👥 Total Users: {len(user_data)}\n"
         result += f"• 📤 Total Upload: `{total_upload:.3f} GB`\n"
         result += f"• 📥 Total Download: `{total_download:.3f} GB`\n"
         result += f"• 📊 Grand Total: `{total_upload + total_download:.3f} GB`\n"
@@ -241,210 +302,123 @@ def get_user_stats_detailed():
     except Exception as e:
         return f"❌ Database error: {str(e)}"
 
-def get_user_stats_simple():
-    """Get simplified user stats"""
+def get_simple_users():
+    """Simple user list with basic info"""
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
-        cursor.execute("SELECT username, traffic_up, traffic_down FROM client_traffic")
-        users = cursor.fetchall()
+        
+        # Try to get basic user info
+        user_data = []
+        try:
+            cursor.execute("SELECT username, up, down FROM client_traffic")
+            user_data = cursor.fetchall()
+        except:
+            try:
+                cursor.execute("SELECT remark, up, down FROM inbound")
+                user_data = cursor.fetchall()
+            except:
+                pass
+        
         conn.close()
         
-        if not users:
-            return "❌ No users found."
+        if not user_data:
+            return "❌ No user data available"
         
-        result = "👥 *User List - Quick View*\n\n"
-        for user in users:
-            username, up, down = user
-            up_gb = round(up / (1024**3), 2)
-            down_gb = round(down / (1024**3), 2)
-            total_gb = up_gb + down_gb
-            
-            result += f"• {username}: 📤{up_gb}GB 📥{down_gb}GB 📊{total_gb}GB\n"
+        result = "👥 *User List - Simple View*\n\n"
+        for user in user_data:
+            if len(user) >= 3:
+                username, up, down = user
+                up_gb = round((up or 0) / (1024**3), 2)
+                down_gb = round((down or 0) / (1024**3), 2)
+                total_gb = up_gb + down_gb
+                
+                result += f"• {username}: 📤{up_gb}G 📥{down_gb}G 📊{total_gb}G\n"
         
         return result
-    except:
-        return "❌ Error reading database"
+        
+    except Exception as e:
+        return f"❌ Error: {str(e)}"
 
-def get_server_status_detailed():
-    """Get complete server status"""
+def get_server_status():
+    """Get server status"""
     try:
         # CPU usage
-        cpu_cmd = "top -bn1 | grep 'Cpu(s)' | awk '{print $2 + $4}'"
-        cpu_usage = subprocess.getoutput(cpu_cmd)
-        
+        cpu = subprocess.getoutput("top -bn1 | grep 'Cpu(s)' | awk '{print $2}' | cut -d'%' -f1")
         # Memory usage
-        mem_cmd = "free -m | awk 'NR==2{printf \"%.1f%%\", $3*100/$2}'"
-        mem_usage = subprocess.getoutput(mem_cmd)
-        
+        mem = subprocess.getoutput("free -m | awk 'NR==2{printf \"%.1f%%\", $3*100/$2}'")
         # Disk usage
-        disk_cmd = "df -h / | awk 'NR==2{print $5}'"
-        disk_usage = subprocess.getoutput(disk_cmd)
-        
+        disk = subprocess.getoutput("df -h / | awk 'NR==2{print $5}'")
         # Uptime
         uptime = subprocess.getoutput("uptime -p")
-        
-        # Load average
-        load = subprocess.getoutput("cat /proc/loadavg | awk '{print $1,$2,$3}'")
-        
         # X-UI status
         xui_status = subprocess.getoutput("systemctl is-active x-ui")
-        xui_status_icon = "✅" if xui_status == "active" else "❌"
         
-        # Xray status
-        xray_running = "✅" if subprocess.call(["pgrep", "xray"]) == 0 else "❌"
-        
-        # Active connections
-        conn_cmd = "netstat -an | grep :443 | grep ESTABLISHED | wc -l"
-        connections = subprocess.getoutput(conn_cmd)
-        
-        # Network traffic
-        traffic_cmd = "ifconfig | grep 'RX packets' | head -1"
-        rx_info = subprocess.getoutput(traffic_cmd)
-        traffic_cmd = "ifconfig | grep 'TX packets' | head -1"
-        tx_info = subprocess.getoutput(traffic_cmd)
-        
-        status_msg = f"""🖥️ *Server Status - Detailed*
+        status_msg = f"""🖥️ *Server Status*
 
-• 💻 CPU Usage: `{cpu_usage}%`
-• 🧠 Memory Usage: `{mem_usage}`
-• 💿 Disk Usage: `{disk_usage}`
-• 📊 Load Average: `{load}`
+• 💻 CPU Usage: `{cpu}%`
+• 🧠 Memory Usage: `{mem}`
+• 💿 Disk Usage: `{disk}`
 • ⏰ Uptime: {uptime}
-
-• 🔌 X-UI Service: {xui_status_icon} {xui_status}
-• 🌐 Xray Process: {xray_running}
-• 🔗 Active Connections: `{connections}`
-
-*Network:*
-📥 RX: `{rx_info.split()[2] if rx_info else 'N/A'}`
-📤 TX: `{tx_info.split()[6] if tx_info else 'N/A'}`"""
+• 🔌 X-UI: `{xui_status}`"""
 
         return status_msg
         
     except Exception as e:
         return f"❌ Status error: {str(e)}"
 
-def get_realtime_traffic():
-    """Get real-time traffic information"""
-    try:
-        # Current network usage
-        rx_cmd = "cat /sys/class/net/[e]*/statistics/rx_bytes 2>/dev/null | head -1"
-        tx_cmd = "cat /sys/class/net/[e]*/statistics/tx_bytes 2>/dev/null | head -1"
-        
-        rx_bytes = int(subprocess.getoutput(rx_cmd) or 0)
-        tx_bytes = int(subprocess.getoutput(tx_cmd) or 0)
-        
-        # Convert to human readable
-        def format_bytes(bytes):
-            for unit in ['B', 'KB', 'MB', 'GB']:
-                if bytes < 1024.0:
-                    return f"{bytes:.2f} {unit}"
-                bytes /= 1024.0
-            return f"{bytes:.2f} TB"
-        
-        # Get per-user realtime data (simplified)
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute("SELECT username, traffic_up, traffic_down FROM client_traffic ORDER BY (traffic_up + traffic_down) DESC LIMIT 10")
-        top_users = cursor.fetchall()
-        conn.close()
-        
-        result = "📊 *Real-time Traffic Monitor*\n\n"
-        result += f"📥 Total Received: `{format_bytes(rx_bytes)}`\n"
-        result += f"📤 Total Sent: `{format_bytes(tx_bytes)}`\n\n"
-        result += "🏆 *Top 10 Users by Usage:*\n"
-        
-        for i, user in enumerate(top_users, 1):
-            username, up, down = user
-            total = up + down
-            result += f"{i}. {username}: `{format_bytes(total)}`\n"
-        
-        return result
-        
-    except Exception as e:
-        return f"❌ Traffic error: {str(e)}"
-
-def restart_services():
-    """Restart X-UI services"""
-    try:
-        subprocess.run(["systemctl", "restart", "x-ui"], check=True)
-        time.sleep(3)
-        status = subprocess.getoutput("systemctl is-active x-ui")
-        return f"✅ *Services Restarted*\n\nX-UI Status: `{status}`"
-    except:
-        return "❌ Failed to restart services"
-
-def add_new_user(username, password):
-    """Add new user via bot"""
-    try:
-        if not username or not password:
-            return "❌ Usage: /adduser username password"
-        
-        # Simple user addition (you might need to adjust this)
-        result = subprocess.getoutput(f"cd /usr/local/x-ui && ./x-ui user add --username {username} --password {password}")
-        return f"✅ User *{username}* added successfully!"
-    except:
-        return "❌ Failed to add user"
-
 def handle_command(command, args=""):
-    """Handle all bot commands"""
+    """Handle bot commands"""
     command = command.lower().strip()
     
     if command == "/start":
-        return """🤖 *X-UI Complete Bot Control*
+        return """🤖 *X-UI Fixed Bot Control*
 
-*Available Commands:*
-👥 `/users` - Detailed user statistics
-📊 `/stats` - Quick user overview  
-🖥️ `/status` - Complete server status
-🌐 `/traffic` - Real-time traffic data
-🔄 `/restart` - Restart X-UI services
-👤 `/adduser username password` - Add new user
-📈 `/realtime` - Live traffic monitor
+*Commands:*
+👥 `/users` - User statistics with expiry
+📊 `/list` - Simple user list
+🖥️ `/status` - Server status
+🔍 `/tables` - Check database tables
 
-*Examples:*
-• `/users` - See all users with expiry dates
-• `/status` - Check server health
-• `/traffic` - Monitor network usage"""
+*Features:*
+✅ Upload/download in GB
+✅ Expiry dates
+✅ Total usage tracking
+✅ Server monitoring"""
 
-    elif command in ["/users", "/allusers"]:
-        return get_user_stats_detailed()
+    elif command in ["/users", "/stats"]:
+        return get_user_stats_fixed()
         
-    elif command in ["/stats", "/quick"]:
-        return get_user_stats_simple()
+    elif command in ["/list", "/simple"]:
+        return get_simple_users()
         
     elif command == "/status":
-        return get_server_status_detailed()
+        return get_server_status()
         
-    elif command in ["/traffic", "/network"]:
-        return get_realtime_traffic()
-        
-    elif command == "/restart":
-        return restart_services()
-        
-    elif command == "/adduser":
-        parts = args.split()
-        if len(parts) >= 2:
-            return add_new_user(parts[0], parts[1])
-        else:
-            return "❌ Usage: /adduser username password"
-    
-    elif command == "/realtime":
-        return "🔄 Real-time monitoring feature coming soon..."
+    elif command == "/tables":
+        tables = get_database_tables()
+        return f"📊 *Database Tables:*\n\n{tables}"
     
     else:
         return "❌ Unknown command. Use `/start` for help."
 
-# Main bot polling loop
-def start_bot():
-    last_update_id = 0
+# Main bot loop
+def main():
+    print(f"Starting bot with database: {DB_PATH}")
     
-    send_message("🤖 *X-UI Bot Started!*\n\nType /start for commands")
+    # Test database connection
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.close()
+        send_message("✅ *Bot started successfully!*\nDatabase connected: " + DB_PATH)
+    except Exception as e:
+        send_message("❌ *Bot startup failed!*\nDatabase error: " + str(e))
+        return
+    
+    last_update_id = 0
     
     while True:
         try:
-            # Get updates from Telegram
             url = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates"
             params = {'offset': last_update_id + 1, 'timeout': 30}
             response = requests.get(url, params=params, timeout=35)
@@ -459,52 +433,43 @@ def start_bot():
                             message_text = update['message']['text']
                             chat_id = update['message']['chat']['id']
                             
-                            # Only respond to authorized chat
                             if str(chat_id) == CHAT_ID:
-                                # Parse command and arguments
                                 parts = message_text.split(' ', 1)
                                 command = parts[0]
                                 args = parts[1] if len(parts) > 1 else ""
                                 
-                                # Handle command
                                 result = handle_command(command, args)
                                 send_message(result)
             
-            time.sleep(1)
+            time.sleep(2)
             
         except Exception as e:
+            print(f"Bot error: {e}")
             time.sleep(5)
 
 if __name__ == "__main__":
-    # Check if database exists
-    if not os.path.exists(DB_PATH):
-        send_message("❌ X-UI database not found! Please check installation.")
-        exit(1)
-    
-    # Start the bot
-    start_bot()
+    main()
 EOF
 
         # Replace placeholders
-        sed -i "s/TOKEN_PLACEHOLDER/$TELEGRAM_BOT_TOKEN/g" /usr/local/x-ui/complete_bot.py
-        sed -i "s/CHATID_PLACEHOLDER/$TELEGRAM_CHAT_ID/g" /usr/local/x-ui/complete_bot.py
+        sed -i "s/TOKEN_PLACEHOLDER/$TELEGRAM_BOT_TOKEN/g" /usr/local/x-ui/fixed_bot.py
+        sed -i "s/CHATID_PLACEHOLDER/$TELEGRAM_CHAT_ID/g" /usr/local/x-ui/fixed_bot.py
+        sed -i "s|DB_PATH_PLACEHOLDER|$DB_PATH|g" /usr/local/x-ui/fixed_bot.py
         
-        chmod +x /usr/local/x-ui/complete_bot.py
+        chmod +x /usr/local/x-ui/fixed_bot.py
         
         # Create systemd service
         cat > /etc/systemd/system/x-ui-bot.service << EOF
 [Unit]
-Description=X-UI Complete Telegram Bot
+Description=X-UI Fixed Telegram Bot
 After=network.target x-ui.service
-Wants=x-ui.service
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/python3 /usr/local/x-ui/complete_bot.py
+ExecStart=/usr/bin/python3 /usr/local/x-ui/fixed_bot.py
 Restart=always
 RestartSec=10
 User=root
-Environment=PYTHONUNBUFFERED=1
 
 [Install]
 WantedBy=multi-user.target
@@ -514,75 +479,54 @@ EOF
         systemctl enable x-ui-bot
         systemctl start x-ui-bot
         
-        echo -e "${green}✓ Complete bot control system installed${plain}"
+        echo -e "${green}✓ Fixed bot control system installed${plain}"
+        echo -e "${yellow}Database path: $DB_PATH${plain}"
         
-        # Send test message with all features
-        safe_send_telegram_message "🎉 *X-UI Complete Bot Control Activated!*
+        # Wait a bit and test
+        sleep 3
+        echo -e "${yellow}Testing bot functionality...${plain}"
+        
+        # Send test message
+        safe_send_telegram_message "🔧 *X-UI Fixed Bot Activated!*
 
-✅ All features are now available:
-
-*📊 User Management:*
-• Complete user statistics with expiry dates
-• Upload/download data in GB
-• Active/expired user counts
-• Total usage tracking
-
-*🖥️ Server Monitoring:*
-• Real-time server status
-• CPU, memory, disk usage
-• Live traffic monitoring
-• Service health checks
-
-*🔧 Remote Control:*
-• Restart services
-• Add new users
-• Real-time monitoring
+✅ Database connected: \`$DB_PATH\`
+✅ Bot system running
+✅ User data monitoring ready
 
 *Try these commands:*
-👥 `/users` - Detailed user list with expiry
-📊 `/stats` - Quick overview
-🖥️ `/status` - Server health check
-🌐 `/traffic` - Network usage
+👥 \`/users\` - Detailed user statistics
+📊 \`/list\` - Simple user list  
+🖥️ \`/status\` - Server status
+🔍 \`/tables\` - Check database
 
-Your bot is now fully operational! 🚀"
+Now you should see user data with expiry dates and GB usage! 🎉"
     fi
 }
 
-# Uninstall function
-uninstall_xui() {
-    echo -e "${red}=== Uninstall X-UI ===${plain}"
-    read -p "Are you sure? (y/n): " confirm
-    if [ "$confirm" != "y" ]; then return; fi
-    
-    systemctl stop x-ui x-ui-bot 2>/dev/null
-    systemctl disable x-ui x-ui-bot 2>/dev/null
-    rm -f /etc/systemd/system/x-ui.service /etc/systemd/system/x-ui-bot.service
-    rm -rf /usr/local/x-ui/ /etc/x-ui/
-    systemctl daemon-reload
-    
-    echo -e "${green}✓ X-UI uninstalled${plain}"
-}
-
-# Show menu
+# Main menu
 show_menu() {
     echo -e "${cyan}"
     echo "========================================="
-    echo "       X-UI COMPLETE BOT CONTROL"
+    echo "       X-UI FIXED BOT CONTROL"
     echo "========================================="
     echo -e "${plain}"
     
     if check_existing_installation; then
         echo -e "${green}✅ X-UI is installed${plain}"
+        DB_PATH=$(find_database_path)
+        if [ -n "$DB_PATH" ]; then
+            echo -e "${blue}Database: $DB_PATH${plain}"
+        else
+            echo -e "${red}❌ Database not found${plain}"
+        fi
         echo -e ""
-        echo -e "1. Install/Reinstall X-UI + Bot"
-        echo -e "2. Setup Bot Control Only"
-        echo -e "3. Uninstall X-UI"
-        echo -e "4. Exit"
+        echo -e "1. Setup Telegram Bot Control"
+        echo -e "2. Check Database"
+        echo -e "3. Exit"
     else
         echo -e "${red}❌ X-UI is not installed${plain}"
         echo -e ""
-        echo -e "1. Install X-UI + Bot Control"
-        echo -e "2. Exit"
+        echo -e "1. Exit"
     fi
     echo -e ""
 }
@@ -591,45 +535,47 @@ show_menu() {
 main() {
     get_server_ip
     
+    if ! check_existing_installation; then
+        echo -e "${red}Please install X-UI first!${plain}"
+        exit 1
+    fi
+    
+    # Find and display database info
+    DB_PATH=$(find_database_path)
+    if [ -z "$DB_PATH" ]; then
+        echo -e "${red}❌ X-UI database not found!${plain}"
+        echo -e "${yellow}Please check X-UI installation.${plain}"
+        exit 1
+    fi
+    
+    echo -e "${green}✓ Database found: $DB_PATH${plain}"
+    
+    # Check database structure
+    echo -e "${yellow}Checking database structure...${plain}"
+    if command -v sqlite3 >/dev/null; then
+        tables=$(sqlite3 "$DB_PATH" ".tables" 2>/dev/null)
+        echo -e "${blue}Database tables: $tables${plain}"
+    fi
+    
     while true; do
         show_menu
         read -p "Select option: " choice
         
         case $choice in
             1)
-                if check_existing_installation; then
-                    read -p "Reinstall? This will remove current installation. (y/n): " reinstall
-                    if [ "$reinstall" = "y" ]; then
-                        uninstall_xui
-                        sleep 2
-                    else
-                        continue
-                    fi
-                fi
-                install_xui
                 setup_telegram_bot
                 if [ "$TELEGRAM_ENABLED" = true ]; then
-                    setup_complete_bot_control
+                    setup_fixed_bot_control
                 fi
                 ;;
             2)
-                if check_existing_installation; then
-                    setup_telegram_bot
-                    if [ "$TELEGRAM_ENABLED" = true ]; then
-                        setup_complete_bot_control
-                    fi
-                else
-                    echo -e "${red}Install X-UI first!${plain}"
+                echo -e "${green}Database Info:${plain}"
+                echo -e "Path: $DB_PATH"
+                if command -v sqlite3 >/dev/null; then
+                    echo -e "Tables: $(sqlite3 "$DB_PATH" ".tables" 2>/dev/null)"
                 fi
                 ;;
-            3)
-                if check_existing_installation; then
-                    uninstall_xui
-                else
-                    echo -e "${yellow}X-UI is not installed${plain}"
-                fi
-                ;;
-            4|"")
+            3|"")
                 echo -e "${green}Goodbye!${plain}"
                 exit 0
                 ;;
