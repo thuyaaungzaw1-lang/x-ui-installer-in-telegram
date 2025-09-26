@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# X-UI FIXED INSTALLER + TELEGRAM BOT By ThuYaAungZaw
+# X-UI CUSTOM INSTALLER + TELEGRAM BOT By ThuYaAungZaw
 
 red='\033[0;31m'
 green='\033[0;32m'
@@ -19,7 +19,7 @@ echo "    ██║   ██╔══██║██║   ██║  ╚██�
 echo "    ██║   ██║  ██║╚██████╔╝   ██║   ██║  ██║"
 echo "    ╚═╝   ╚═╝  ╚═╝ ╚═════╝    ╚═╝   ╚═╝  ╚═╝"
 echo -e "${plain}"
-echo -e "${blue}X-UI FIXED INSTALLER + TELEGRAM BOT${plain}"
+echo -e "${blue}X-UI CUSTOM INSTALLER + TELEGRAM BOT${plain}"
 echo -e "${green}By ThuYaAungZaw${plain}"
 echo -e "${yellow}=========================================${plain}"
 
@@ -29,10 +29,46 @@ if [[ $EUID -ne 0 ]]; then
     exit 1
 fi
 
+# Custom configuration
+CUSTOM_USERNAME="admin"
+CUSTOM_PASSWORD="admin"
+CUSTOM_PORT="54321"
+
 # Telegram configuration
 TELEGRAM_BOT_TOKEN=""
 TELEGRAM_CHAT_ID=""
 TELEGRAM_ENABLED=false
+
+# Get custom credentials
+get_custom_credentials() {
+    echo -e "${green}=== Custom Configuration ===${plain}"
+    
+    read -p "Enter username [default: admin]: " user_input
+    read -p "Enter password [default: admin]: " pass_input
+    read -p "Enter port [default: 54321]: " port_input
+    
+    if [ -n "$user_input" ]; then
+        CUSTOM_USERNAME="$user_input"
+    fi
+    
+    if [ -n "$pass_input" ]; then
+        CUSTOM_PASSWORD="$pass_input"
+    fi
+    
+    if [ -n "$port_input" ]; then
+        CUSTOM_PORT="$port_input"
+    fi
+    
+    echo -e "${blue}Custom Settings:${plain}"
+    echo -e "Username: ${cyan}$CUSTOM_USERNAME${plain}"
+    echo -e "Password: ${cyan}$CUSTOM_PASSWORD${plain}"
+    echo -e "Port: ${cyan}$CUSTOM_PORT${plain}"
+    
+    read -p "Continue with these settings? (y/n): " confirm
+    if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
+        get_custom_credentials
+    fi
+}
 
 # Safe telegram message function
 safe_send_telegram_message() {
@@ -110,10 +146,10 @@ fix_installation_issues() {
     rm -f /usr/local/bin/x-ui 2>/dev/null
     
     # Clean up port conflicts
-    echo -e "${yellow}Checking port 54321...${plain}"
-    if lsof -i :54321 >/dev/null 2>&1; then
-        echo -e "${red}Port 54321 is in use! Killing process...${plain}"
-        fuser -k 54321/tcp 2>/dev/null
+    echo -e "${yellow}Checking port $CUSTOM_PORT...${plain}"
+    if lsof -i :$CUSTOM_PORT >/dev/null 2>&1; then
+        echo -e "${red}Port $CUSTOM_PORT is in use! Killing process...${plain}"
+        fuser -k $CUSTOM_PORT/tcp 2>/dev/null
         sleep 2
     fi
     
@@ -121,10 +157,10 @@ fix_installation_issues() {
     echo -e "${yellow}Updating system packages...${plain}"
     if command -v apt >/dev/null; then
         apt update -y >/dev/null 2>&1
-        apt install -y wget curl net-tools >/dev/null 2>&1
+        apt install -y wget curl net-tools lsof >/dev/null 2>&1
     elif command -v yum >/dev/null; then
         yum update -y >/dev/null 2>&1
-        yum install -y wget curl net-tools >/dev/null 2>&1
+        yum install -y wget curl net-tools lsof >/dev/null 2>&1
     fi
     
     echo -e "${green}✓ Pre-installation fixes applied${plain}"
@@ -134,7 +170,10 @@ fix_installation_issues() {
 install_xui() {
     echo -e "${green}=== Starting X-UI Installation ===${plain}"
     
-    # Apply fixes first
+    # Get custom credentials first
+    get_custom_credentials
+    
+    # Apply fixes
     fix_installation_issues
     
     # Detect architecture
@@ -154,37 +193,32 @@ install_xui() {
     ipv4=$(curl -s4 ifconfig.me 2>/dev/null || curl -s ifconfig.me 2>/dev/null || echo "unknown")
     echo -e "${blue}Server IP: $ipv4${plain}"
     
-    # Get latest version with multiple fallbacks
+    # Get latest version
     echo -e "${yellow}Fetching latest version...${plain}"
     latest_version=$(curl -s https://api.github.com/repos/yonggekkk/x-ui-yg/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
     
     if [ -z "$latest_version" ]; then
-        # Fallback to direct download
-        echo -e "${yellow}Using fallback version detection...${plain}"
-        latest_version="v1.0.0"  # Default version
+        latest_version="v1.0.0"
     fi
     
     echo -e "${green}Version: $latest_version${plain}"
     
-    # Download x-ui with multiple fallbacks
+    # Download x-ui
     echo -e "${yellow}Downloading x-ui...${plain}"
     cd /usr/local/
     
-    # Try multiple download URLs
     download_url="https://github.com/yonggekkk/x-ui-yg/releases/download/$latest_version/x-ui-linux-$arch.tar.gz"
     
     if ! wget -O x-ui-linux-$arch.tar.gz "$download_url"; then
         echo -e "${red}Download failed! Trying alternative...${plain}"
-        # Try different URL pattern
         download_url="https://github.com/yonggekkk/x-ui-yg/releases/latest/download/x-ui-linux-$arch.tar.gz"
         if ! wget -O x-ui-linux-$arch.tar.gz "$download_url"; then
             echo -e "${red}All download attempts failed!${plain}"
-            echo -e "${yellow}Please check your internet connection${plain}"
             exit 1
         fi
     fi
     
-    # Extract with verification
+    # Extract
     echo -e "${yellow}Installing...${plain}"
     if ! tar zxvf x-ui-linux-$arch.tar.gz; then
         echo -e "${red}Extraction failed!${plain}"
@@ -236,6 +270,22 @@ EOF
     echo -e "${yellow}Waiting for service to start...${plain}"
     sleep 8
     
+    # Apply custom credentials
+    echo -e "${yellow}Applying custom credentials...${plain}"
+    systemctl stop x-ui
+    sleep 2
+    
+    # Use x-ui command to change settings
+    if [ -f /usr/local/x-ui/x-ui ]; then
+        cd /usr/local/x-ui
+        ./x-ui setting -username "$CUSTOM_USERNAME" -password "$CUSTOM_PASSWORD"
+        ./x-ui setting -port "$CUSTOM_PORT"
+    fi
+    
+    # Restart with new settings
+    systemctl start x-ui
+    sleep 5
+    
     # Check if service is running
     if ! systemctl is-active x-ui >/dev/null; then
         echo -e "${red}Service failed to start! Checking logs...${plain}"
@@ -246,25 +296,25 @@ EOF
         sleep 3
     fi
     
-    # Configure firewall
-    echo -e "${yellow}Configuring firewall...${plain}"
+    # Configure firewall for custom port
+    echo -e "${yellow}Configuring firewall for port $CUSTOM_PORT...${plain}"
     if command -v ufw >/dev/null && ufw status | grep -q "active"; then
-        ufw allow 54321/tcp
+        ufw allow $CUSTOM_PORT/tcp
         ufw allow 10000:50000/udp
         ufw allow 10000:50000/tcp
         echo -e "${green}✓ UFW configured${plain}"
     fi
     
-    # Always add iptables rules
-    iptables -A INPUT -p tcp --dport 54321 -j ACCEPT 2>/dev/null
+    # Always add iptables rules for custom port
+    iptables -A INPUT -p tcp --dport $CUSTOM_PORT -j ACCEPT 2>/dev/null
     iptables -A INPUT -p udp --dport 10000:50000 -j ACCEPT 2>/dev/null
     iptables -A INPUT -p tcp --dport 10000:50000 -j ACCEPT 2>/dev/null
     
     # Test the installation
     echo -e "${yellow}Testing installation...${plain}"
     
-    # Test panel access
-    if curl -s http://localhost:54321 >/dev/null 2>&1; then
+    # Test panel access with custom port
+    if curl -s http://localhost:$CUSTOM_PORT >/dev/null 2>&1; then
         panel_status="${green}✓ Accessible${plain}"
     else
         panel_status="${red}✗ Not accessible${plain}"
@@ -279,37 +329,42 @@ EOF
     
     # Display results
     echo -e "${green}=== Installation Complete! ===${plain}"
-    echo -e "${cyan}Panel URL: http://$ipv4:54321${plain}"
-    echo -e "${cyan}Username: admin${plain}"
-    echo -e "${cyan}Password: admin${plain}"
+    echo -e "${cyan}Panel URL: http://$ipv4:$CUSTOM_PORT${plain}"
+    echo -e "${cyan}Username: $CUSTOM_USERNAME${plain}"
+    echo -e "${cyan}Password: $CUSTOM_PASSWORD${plain}"
     echo -e ""
     echo -e "${blue}Status Check:${plain}"
     echo -e "Panel: $panel_status"
     echo -e "Xray: $xray_status"
-    echo -e "${red}⚠️ IMPORTANT: Change default password after login!${plain}"
+    echo -e "${red}⚠️ IMPORTANT: Keep your credentials safe!${plain}"
     
-    # Send Telegram notification
+    # Send Telegram notification with custom credentials
     if [ "$TELEGRAM_ENABLED" = true ]; then
         safe_send_telegram_message "🎉 X-UI Installation Complete!
         
 🖥️ Server: $ipv4
-🔗 Panel: http://$ipv4:54321
-👤 Username: admin
-🔐 Password: admin
+🔗 Panel: http://$ipv4:$CUSTOM_PORT
+👤 Username: $CUSTOM_USERNAME
+🔐 Password: $CUSTOM_PASSWORD
 
 Status:
 Panel: ✅ Accessible
 Xray: ✅ Running
 
-⚠️ Change password after login!"
+⚠️ Keep credentials safe!"
     fi
     
-    echo -e "${green}=========================================${plain}"
-    echo -e "${green}Installation completed!${plain}"
-    echo -e "${yellow}If you can't access the panel, try:${plain}"
-    echo -e "${yellow}1. systemctl restart x-ui${plain}"
-    echo -e "${yellow}2. Check firewall: ufw status${plain}"
-    echo -e "${yellow}3. Check logs: journalctl -u x-ui -f${plain}"
+    # Troubleshooting guide
+    echo -e "${yellow}=========================================${plain}"
+    if [ "$panel_status" = "${red}✗ Not accessible${plain}" ]; then
+        echo -e "${red}Troubleshooting needed:${plain}"
+        echo -e "${yellow}1. Check if port $CUSTOM_PORT is open: netstat -tulpn | grep $CUSTOM_PORT${plain}"
+        echo -e "${yellow}2. Restart service: systemctl restart x-ui${plain}"
+        echo -e "${yellow}3. Check logs: journalctl -u x-ui -f${plain}"
+        echo -e "${yellow}4. Manual start: cd /usr/local/x-ui && ./x-ui${plain}"
+    else
+        echo -e "${green}✅ Panel is accessible!${plain}"
+    fi
 }
 
 # Ask for Telegram setup
@@ -323,7 +378,8 @@ echo -e "${cyan}"
 echo "========================================="
 echo "  X-UI Installed by ThuYaAungZaw"
 echo "  Telegram: $([ "$TELEGRAM_ENABLED" = true ] && echo "✅ Enabled" || echo "❌ Disabled")"
-echo "  Panel: http://$(curl -s ifconfig.me):54321"
-echo "  Admin: admin/admin"
+echo "  Panel: http://$(curl -s ifconfig.me):$CUSTOM_PORT"
+echo "  Username: $CUSTOM_USERNAME"
+echo "  Password: $CUSTOM_PASSWORD"
 echo "========================================="
 echo -e "${plain}"
